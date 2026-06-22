@@ -4,7 +4,7 @@ nombreCompleto = "Jhon Zapata"                  # declaracion y asignación de v
 edad = 29                                       # declaracion y asignación de variable tipo entero                         
 estatura = 1.75                                 # declaracion y asignación de variable tipo flotante
 esEstudiante = True                             # declaración y asignación de variable tipo boleano
-hobbies = ["lectura", "futbol", "billar"]       # declaración de una lista con valores asignados
+
 
 #  Declaración de la clase 
 
