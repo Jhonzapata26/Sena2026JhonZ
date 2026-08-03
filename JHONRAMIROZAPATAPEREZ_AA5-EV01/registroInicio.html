@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cliente de la API</title>
+    <!-- Hoja de estilos externa -->
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <h1>Usuarios</h1>
+
+    <div class="card">
+      <!-- Formulario para crear una cuenta nueva -->
+      <h2>Formulario de Registro</h2>
+
+      <form id="formRegistro">
+        <input name="nombre" placeholder="Nombre" />
+        <input name="edad" type="number" placeholder="Edad" />
+        <input name="correo" type="email" placeholder="Correo" />
+        <input name="contrasena" type="password" placeholder="Contraseña" />
+        <button type="submit">Crear cuenta</button>
+      </form>
+
+      <!-- Formulario para iniciar sesion con una cuenta existente -->
+      <h2>Iniciar sesion</h2>
+      <form id="formLogin">
+        <input name="correo" type="email" placeholder="Correo" />
+        <input name="contrasena" type="password" placeholder="Contraseña" />
+        <button type="submit">Entrar</button>
+      </form>
+    </div>
+
+    <!-- Zona donde se muestran los mensajes de exito o error -->
+    <div id="mensaje"></div>
+
+    <script>
+      // Direccion base de la API a la que se conecta este cliente
+      const API = "http://localhost:8080";
+      // Referencia al elemento donde se muestran los mensajes
+      const mensaje = document.getElementById("mensaje");
+
+      // Muestra un mensaje en pantalla, marcandolo como error u ok segun corresponda
+      function mostrar(texto, esError) {
+        mensaje.textContent = texto;
+        mensaje.className = esError ? "error" : "ok";
+      }
+
+      // Envia una peticion POST con los datos del formulario a la ruta indicada
+      async function enviar(ruta, datos) {
+        try {
+          const respuesta = await fetch(API + ruta, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(datos),
+          });
+
+          // Convierte la respuesta del servidor a JSON
+          const cuerpo = await respuesta.json();
+
+          // Si la respuesta no fue exitosa, muestra el mensaje de error
+          if (!respuesta.ok) {
+            return mostrar(cuerpo.error, true);
+          }
+
+          // Si todo salio bien, muestra el mensaje de exito
+          mostrar(cuerpo.message, false);
+        } catch (error) {
+          // Se ejecuta si no fue posible conectarse al servidor
+          mostrar("No se pudo conectar con el servidor", true);
+        }
+      }
+
+      // Escucha el envio del formulario de registro
+      document
+        .getElementById("formRegistro")
+        .addEventListener("submit", (evento) => {
+          // Evita que el formulario recargue la pagina
+          evento.preventDefault();
+          // Convierte los campos del formulario en un objeto simple
+          const datos = Object.fromEntries(new FormData(evento.target));
+          // Convierte la edad de texto a numero antes de enviarla
+          datos.edad = Number(datos.edad);
+          enviar("/sign-up", datos);
+        });
+
+      // Escucha el envio del formulario de inicio de sesion
+      document
+        .getElementById("formLogin")
+        .addEventListener("submit", (evento) => {
+          // Evita que el formulario recargue la pagina
+          evento.preventDefault();
+          // Convierte los campos del formulario en un objeto simple
+          const datos = Object.fromEntries(new FormData(evento.target));
+          enviar("/sign-in", datos);
+        });
+    </script>
+  </body>
+</html>
