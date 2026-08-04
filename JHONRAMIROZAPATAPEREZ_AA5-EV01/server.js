@@ -166,12 +166,17 @@ app.get("/UsuariosRegistrados", async (request, response) => {
 });
 
 //Ruta para actualizar un usuario segun su id
-app.put("/UsuariosRegistrados/:id", async (request, response) => {
+app.put("/UsuariosRegistrados{/:id}", async (request, response) => {
   const { id } = request.params;
   const { nombre, edad, correo, contrasena } = request.body;
 
   if (!id) {
     return response.status(400).json({ error: "ID no definida" });
+  }
+
+  // Valida que el id sea un numero entero antes de consultar la base de datos
+  if (!/^\d+$/.test(id)) {
+    return response.status(400).json({ error: "ID invalida" });
   }
 
   // Código que puede fallar o dar un error
