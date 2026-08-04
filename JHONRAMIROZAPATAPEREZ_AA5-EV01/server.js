@@ -35,7 +35,7 @@ app.post("/sign-up", async (request, response) => {
 
   // Valida que la edad haya sido enviada
   if (!edad) {
-    return response.status(400).json({ error: "La edad ha sido ingresada" });
+    return response.status(400).json({ error: "La edad no ha sido ingresada" });
   }
 
   // Valida que el correo haya sido enviado
@@ -163,6 +163,87 @@ app.get("/UsuariosRegistrados", async (request, response) => {
 
   // Devuelve la lista de usuarios sin la contrasena
   return response.status(200).json(usuarios || []);
+});
+
+//Ruta para actualizar un usuario segun su id
+app.put("/UsuariosRegistrados/:id", async (request, response) => {
+  const { id } = request.params;
+  const { nombre, edad, correo, contrasena } = request.body;
+
+  if (!id) {
+    return response.status(400).json({ error: "ID no definida" });
+  }
+
+  // Código que puede fallar o dar un error
+  try {
+    // Arrays dinámicos
+    const campos = [];
+    const valores = [];
+    let contador = 1;
+
+    // Solo agregamos los campos que realmente llegaron
+    if (nombre !== undefined) {
+      campos.push(`nombre = $${contador}`);
+      valores.push(nombre);
+      contador++;
+    }
+
+    if (edad !== undefined) {
+      campos.push(`edad = $${contador}`);
+      valores.push(edad);
+      contador++;
+    }
+
+    if (correo !== undefined) {
+      campos.push(`correo = $${contador}`);
+      valores.push(correo);
+      contador++;
+    }
+
+    if (contrasena !== undefined) {
+      const salt = await bcrypt.genSalt(10);
+      const hash = await bcrypt.hash(contrasena, salt);
+      campos.push(`contrasena = $${contador}`);
+      valores.push(hash);
+      contador++;
+    }
+
+    // Si no enviaron ningún campo para actualizar
+    if (campos.length === 0) {
+      return response
+        .status(400)
+        .json({ error: "No se enviaron datos para actualizar" });
+    }
+
+    // Agregamos el id al final
+    valores.push(id);
+
+    const query = `
+      UPDATE public."UsuariosRegistrados"
+      SET ${campos.join(", ")}
+      WHERE ID = $${contador}
+      RETURNING *
+    `;
+
+    const usuarioActualizado = await pg.query(query, valores);
+
+    if (usuarioActualizado.rows.length === 0) {
+      return response.status(404).json({ error: "El usuario no existe" });
+    }
+
+    // Quitamos la contraseña de la respuesta
+    const { contrasena: _, ...usuarioSinContrasena } =
+      usuarioActualizado.rows[0];
+
+    return response.status(200).json({
+      message: "El usuario ha sido actualizado con éxito",
+      usuario: usuarioSinContrasena,
+    });
+  } catch (error) {
+    return response
+      .status(500)
+      .json({ error: "Ha ocurrido un error al actualizar el usuario" });
+  }
 });
 
 // Ruta para eliminar un usuario registrado segun su id
