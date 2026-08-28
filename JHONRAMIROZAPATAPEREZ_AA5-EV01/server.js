@@ -276,7 +276,12 @@ app.delete("/UsuariosRegistrados{/:id}", async (request, response) => {
   return response.status(200).json({ message: "Usuario eliminado!" });
 });
 
-// Inicia el servidor en el puerto 8080
-app.listen(8080, () => {
-  console.log("Servidor iniciado en el puerto 8080");
-});
+// Inicia el servidor en el puerto 8080 (solo si se ejecuta directamente, no al importarlo en los tests)
+if (require.main === module) {
+  app.listen(8080, () => {
+    console.log("Servidor iniciado en el puerto 8080");
+  });
+}
+
+// Exporta la app y el pool para poder probarlos con mocha/supertest
+module.exports = { app, pg };
