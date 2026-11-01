@@ -2,8 +2,16 @@ const { expect } = require("chai");
 const sinon = require("sinon");
 const request = require("supertest");
 const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+
+// Clave de prueba para firmar tokens (en produccion se toma del archivo .env)
+process.env.JWT_SECRET = process.env.JWT_SECRET || "secreto-de-prueba";
 
 const { app, pg } = require("../server");
+
+// Token valido para las rutas protegidas (PUT y DELETE) - AJ-08
+const token = jwt.sign({ id: 1, correo: "juan@example.com" }, process.env.JWT_SECRET);
+const autorizacion = `Bearer ${token}`;
 
 describe("API UsuariosRegistrados (server.js)", () => {
   let queryStub;
@@ -113,7 +121,10 @@ describe("API UsuariosRegistrados (server.js)", () => {
         .send({ correo: "juan@example.com", contrasena: "clave123" });
 
       expect(res.status).to.equal(200);
-      expect(res.body).to.deep.equal({ message: "Bienvenido!" });
+      expect(res.body.message).to.equal("Bienvenido!");
+      // AJ-08: el inicio de sesion devuelve un token JWT valido
+      const datos = jwt.verify(res.body.token, process.env.JWT_SECRET);
+      expect(datos.correo).to.equal("juan@example.com");
     });
 
     it("rechaza el login si falta el correo", async () => {
@@ -243,6 +254,7 @@ describe("API UsuariosRegistrados (server.js)", () => {
 
       const res = await request(app)
         .put("/UsuariosRegistrados/1")
+        .set("Authorization", autorizacion)
         .send({ nombre: "Nuevo Nombre" });
 
       expect(res.status).to.equal(200);
@@ -267,6 +279,7 @@ describe("API UsuariosRegistrados (server.js)", () => {
 
       await request(app)
         .put("/UsuariosRegistrados/1")
+        .set("Authorization", autorizacion)
         .send({ contrasena: "nuevaClave" });
 
       const valoresQuery = queryStub.firstCall.args[1];
@@ -276,6 +289,7 @@ describe("API UsuariosRegistrados (server.js)", () => {
     it("rechaza la actualizacion si el id no es numerico", async () => {
       const res = await request(app)
         .put("/UsuariosRegistrados/abc")
+        .set("Authorization", autorizacion)
         .send({ nombre: "Nuevo Nombre" });
 
       expect(res.status).to.equal(400);
@@ -284,7 +298,8 @@ describe("API UsuariosRegistrados (server.js)", () => {
     });
 
     it("rechaza la actualizacion si no se envian campos", async () => {
-      const res = await request(app).put("/UsuariosRegistrados/1").send({});
+      const res = await request(app).put("/UsuariosRegistrados/1")
+        .set("Authorization", autorizacion).send({});
 
       expect(res.status).to.equal(400);
       expect(res.body).to.deep.equal({
@@ -297,6 +312,7 @@ describe("API UsuariosRegistrados (server.js)", () => {
 
       const res = await request(app)
         .put("/UsuariosRegistrados/999")
+        .set("Authorization", autorizacion)
         .send({ nombre: "Nuevo Nombre" });
 
       expect(res.status).to.equal(404);
@@ -308,6 +324,7 @@ describe("API UsuariosRegistrados (server.js)", () => {
 
       const res = await request(app)
         .put("/UsuariosRegistrados/1")
+        .set("Authorization", autorizacion)
         .send({ nombre: "Nuevo Nombre" });
 
       expect(res.status).to.equal(500);
@@ -321,7 +338,8 @@ describe("API UsuariosRegistrados (server.js)", () => {
     it("elimina un usuario correctamente", async () => {
       queryStub.resolves({ rows: [{ id: 1 }] });
 
-      const res = await request(app).delete("/UsuariosRegistrados/1");
+      const res = await request(app).delete("/UsuariosRegistrados/1")
+        .set("Authorization", autorizacion);
 
       expect(res.status).to.equal(200);
       expect(res.body).to.deep.equal({ message: "Usuario eliminado!" });
@@ -330,7 +348,8 @@ describe("API UsuariosRegistrados (server.js)", () => {
     it("retorna 404 si el usuario a eliminar no existe", async () => {
       queryStub.resolves({ rows: [] });
 
-      const res = await request(app).delete("/UsuariosRegistrados/999");
+      const res = await request(app).delete("/UsuariosRegistrados/999")
+        .set("Authorization", autorizacion);
 
       expect(res.status).to.equal(404);
       expect(res.body).to.deep.equal({ error: "El usuario no existe" });
