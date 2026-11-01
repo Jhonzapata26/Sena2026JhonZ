@@ -8,6 +8,11 @@ const bcrypt = require("bcryptjs");
 const cors = require("cors");
 // Pool de conexiones para hablar con la base de datos Postgres
 const { Pool } = require("pg");
+// Libreria para generar y verificar tokens de sesion (JWT) - AJ-08
+const jwt = require("jsonwebtoken");
+// Modulos de Node para leer el certificado SSL de Supabase - AJ-13
+const fs = require("fs");
+const path = require("path");
 
 // Instancia principal del servidor Express
 const app = express();
@@ -15,11 +20,40 @@ const app = express();
 app.use(express.json());
 // Habilita CORS para que el cliente (registroInicio.html) pueda consumir la API
 app.use(cors("*"));
+// Certificado CA de Supabase (AJ-13). Si el archivo existe, la conexion verifica
+// el certificado del servidor; si no existe, se mantiene el modo anterior y se avisa.
+const rutaCertificado = path.join(__dirname, "certs", "supabase-ca.crt");
+const configuracionSSL = fs.existsSync(rutaCertificado)
+  ? { ca: fs.readFileSync(rutaCertificado, "utf8") }
+  : { rejectUnauthorized: false };
+
+if (!fs.existsSync(rutaCertificado) && require.main === module) {
+  console.warn(
+    "Aviso: no se encontro certs/supabase-ca.crt; la conexion SSL no verifica el certificado",
+  );
+}
+
 // Conexion a la base de datos usando la URL definida en .env
 const pg = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: configuracionSSL,
 });
+
+// Middleware que exige un token valido en las rutas que modifican datos (AJ-08)
+function autenticar(request, response, next) {
+  const [tipo, token] = (request.headers.authorization || "").split(" ");
+
+  if (tipo !== "Bearer" || !token) {
+    return response.status(401).json({ error: "Token no enviado" });
+  }
+
+  try {
+    request.usuario = jwt.verify(token, process.env.JWT_SECRET);
+    return next();
+  } catch {
+    return response.status(401).json({ error: "Token invalido o vencido" });
+  }
+}
 
 // Ruta para registrar un nuevo usuario
 app.post("/sign-up", async (request, response) => {
@@ -52,6 +86,13 @@ app.post("/sign-up", async (request, response) => {
       .json({ error: "La contrasena no ha sido ingresada" });
   }
 
+  // Valida que la edad sea un numero entero (AJ-11): rechaza 25.5 o "veinte"
+  if (!Number.isInteger(edad)) {
+    return response
+      .status(400)
+      .json({ error: "La edad debe ser un numero entero" });
+  }
+
   // Rechaza edades menores a 17 (pero mayores a 0)
   if (edad > 0 && edad < 17) {
     return response
@@ -70,7 +111,7 @@ app.post("/sign-up", async (request, response) => {
   const hash = await bcrypt.hash(contrasena, salt);
 
   // Inserta el nuevo usuario en la tabla UsuariosRegistrados
-  const nuevoUsuario = await pg.query(
+  await pg.query(
     `INSERT INTO public."UsuariosRegistrados" (nombre, edad, correo, contrasena) VALUES ($1, $2, $3, $4) RETURNING *`,
     [nombre, edad, correo, hash],
   );
@@ -116,8 +157,15 @@ app.post("/sign-in", async (request, response) => {
     return response.status(401).json({ error: "Contrasena incorrecta" });
   }
 
-  // Inicio de sesion exitoso
-  return response.status(200).json({ message: "Bienvenido!" });
+  // Genera el token de sesion valido por 1 hora (AJ-08)
+  const token = jwt.sign(
+    { id: usuario.rows[0].id, correo: usuario.rows[0].correo },
+    process.env.JWT_SECRET,
+    { expiresIn: "1h" },
+  );
+
+  // Inicio de sesion exitoso: devuelve el token para usar en PUT y DELETE
+  return response.status(200).json({ message: "Bienvenido!", token });
 });
 
 // Ruta para consultar usuarios registrados por nombre o correo
@@ -166,7 +214,7 @@ app.get("/UsuariosRegistrados", async (request, response) => {
 });
 
 //Ruta para actualizar un usuario segun su id
-app.put("/UsuariosRegistrados{/:id}", async (request, response) => {
+app.put("/UsuariosRegistrados{/:id}", autenticar, async (request, response) => {
   const { id } = request.params;
   const { nombre, edad, correo, contrasena } = request.body;
 
@@ -245,6 +293,13 @@ app.put("/UsuariosRegistrados{/:id}", async (request, response) => {
       usuario: usuarioSinContrasena,
     });
   } catch (error) {
+    // Correo repetido: viola la restriccion UNIQUE de la tabla (AJ-10)
+    if (error.code === "23505") {
+      return response
+        .status(409)
+        .json({ error: "El correo ya esta registrado" });
+    }
+
     return response
       .status(500)
       .json({ error: "Ha ocurrido un error al actualizar el usuario" });
@@ -252,7 +307,7 @@ app.put("/UsuariosRegistrados{/:id}", async (request, response) => {
 });
 
 // Ruta para eliminar un usuario registrado segun su id
-app.delete("/UsuariosRegistrados{/:id}", async (request, response) => {
+app.delete("/UsuariosRegistrados{/:id}", autenticar, async (request, response) => {
   // Extrae el id del usuario desde los parametros de la ruta
   const { id } = request.params;
 
@@ -274,6 +329,19 @@ app.delete("/UsuariosRegistrados{/:id}", async (request, response) => {
 
   // Confirma que el usuario fue eliminado
   return response.status(200).json({ message: "Usuario eliminado!" });
+});
+
+// Middleware de errores (AJ-09 y AJ-10). Express 5 envia aqui cualquier error
+// de una ruta async (por ejemplo, si falla la base de datos), asi ninguna ruta
+// se queda sin responder ni expone detalles internos.
+app.use((error, request, response, next) => {
+  // Correo repetido: viola la restriccion UNIQUE de la tabla
+  if (error.code === "23505") {
+    return response.status(409).json({ error: "El correo ya esta registrado" });
+  }
+
+  console.error(error);
+  return response.status(500).json({ error: "Error interno del servidor" });
 });
 
 // Inicia el servidor en el puerto 8080 (solo si se ejecuta directamente, no al importarlo en los tests)
